@@ -1,64 +1,99 @@
 # MosqueConnect Deployment Guide
 
-This guide provides instructions for deploying the MosqueConnect platform in a production-ready environment.
+This repository now supports a split deployment model:
 
-## 1. Prerequisites
-- **Docker & Docker Compose**: Version 20.10+
-- **PostgreSQL**: Version 16+
-- **Redis**: Version 7+
-- **Node.js**: Version 20+ (for local builds)
+- **Frontend** deploys to **Vercel** from GitHub Actions.
+- **Backend services** are built as **Docker images** and published from GitHub Actions.
+- **Stateful dependencies** (Postgres and Redis) run as Docker services alongside the backend stack.
 
-## 2. Environment Configuration
-Copy the `.env.example` to `.env` in the root and in each service directory.
+## 1. Deployment topology
 
-### Key Variables:
-- `DATABASE_URL`: Connection string for PostgreSQL.
-- `REDIS_URL`: Connection string for Redis.
-- `JWT_SECRET`: Secure string for signing access tokens.
-- `INTERNAL_API_URL`: Internal URL for service-to-service communication (e.g., `http://api-gateway:80/api`).
+### Frontend
+- The `frontend` workspace is deployed through `.github/workflows/vercel-deploy.yml`.
+- Preview deployments run for pull requests to `main`.
+- Production deployments run on pushes to `main`.
 
-## 3. Deployment with Docker Compose
-The platform is fully containerized. To start the entire stack:
+### Backend services
+- `.github/workflows/docker-images.yml` builds and pushes container images to GHCR.
+- `docker-compose.prod.yml` pulls those images and runs the API services with Postgres and Redis.
+
+## 2. Required GitHub secrets
+
+Add these repository secrets before enabling deployments:
+
+### Vercel deployment
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
+### Container registry / runtime
+- No extra secret is needed for GHCR when publishing from GitHub Actions with `GITHUB_TOKEN`.
+- Your runtime host still needs a `.env` file with production values.
+
+## 3. Vercel configuration
+
+In Vercel, connect the project to this repository and set the **Root Directory** to `frontend`.
+
+Configure these environment variables in Vercel so Next.js rewrites target the backend services:
+
+- `IDENTITY_SERVICE_URL`
+- `MOSQUE_SERVICE_URL`
+- `PRAYER_EVENT_SERVICE_URL`
+- `COMMUNITY_SERVICE_URL`
+- `GOVERNANCE_SERVICE_URL`
+- `LIBRARY_SERVICE_URL`
+- `FINANCE_SERVICE_URL`
+- `NEXT_PUBLIC_API_URL`
+
+The frontend rewrite rules are environment-driven so the same app can work locally and on Vercel.
+
+## 4. Backend runtime with Docker Compose
+
+Copy `.env.example` to a production `.env` file on your Docker host and set real values.
+
+Start the backend stack:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env -f docker-compose.prod.yml up -d
 ```
 
-### Services & Ports:
-- **Frontend (Next.js)**: 3000
-- **Identity Service**: 4001
-- **Mosque Service**: 4002
-- **Prayer & Event Service**: 4003
-- **Community Service**: 4004
-- **Governance Service**: 4005
-- **Library Service**: 4006
-- **Finance Service**: 4007
+This starts:
+- Postgres
+- Redis
+- identity-service
+- mosque-service
+- prayer-event-service
+- community-service
+- governance-service
+- library-service
+- finance-service
+- notification-service
 
-## 4. CI/CD Pipeline
-The project includes a GitHub Actions workflow in `.github/workflows/ci.yml`. It automatically runs on every push and pull request to `main`, `master`, or `develop`.
+## 5. GitHub Actions workflows
 
-Checks performed:
-1. **Linting**: `npm run lint`
-2. **Type Checking**: `npm run typecheck`
-3. **Unit Testing**: `npm test`
+### CI
+`.github/workflows/ci.yml` runs repository validation on pushes and pull requests.
 
-## 5. Health Monitoring
-Each service exposes a standardized health endpoint at `/health`.
+### Docker publishing
+`.github/workflows/docker-images.yml` publishes versioned images for every deployable service to GHCR.
 
-Example Response:
-```json
-{
-  "status": "ok",
-  "service": "identity-service",
-  "timestamp": "2026-03-18T10:00:00.000Z",
-  "uptime": 3600,
-  "database": "connected"
-}
+### Vercel deployment
+`.github/workflows/vercel-deploy.yml` builds and deploys the frontend using the Vercel CLI.
+
+## 6. Recommended production flow
+
+1. Merge to `main`.
+2. GitHub Actions publishes updated backend Docker images.
+3. GitHub Actions deploys the frontend to Vercel.
+4. Pull the latest backend images on the Docker host:
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml pull
+docker compose --env-file .env -f docker-compose.prod.yml up -d
 ```
 
-Prometheus can scrape these endpoints for centralized monitoring.
+## 7. Notes
 
-## 6. Security Best Practices
-- **TLS/SSL**: Always use a reverse proxy (e.g., Nginx) with Let's Encrypt for HTTPS.
-- **Secrets Management**: Do not commit actual `.env` files. Use a secret manager (e.g., GitHub Secrets, Vault).
-- **Database Backups**: Schedule daily automated backups and verify PITR.
+- The frontend uses environment-based rewrites instead of hardcoded `localhost` URLs.
+- Vercel should host only the Next.js frontend.
+- Databases and internal API services should remain on your Docker host or VPS, not inside Vercel.

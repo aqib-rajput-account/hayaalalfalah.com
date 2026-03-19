@@ -2,13 +2,43 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: mosqueconnect_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user -d mosqueconnect_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://user:password@localhost:5432/mosqueconnect_ci?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-secret
+      AUTH_COOKIE_NAME: mc_access_token
+      AUTH_COOKIE_MAX_AGE_MS: 86400000
 
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +52,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma clients
+        run: |
+          npm run prisma:generate --workspace=identity-service
+          npm run prisma:generate --workspace=mosque-service
+          npm run prisma:generate --workspace=prayer-event-service
+          npm run prisma:generate --workspace=community-service
+          npm run prisma:generate --workspace=governance-service
+          npm run prisma:generate --workspace=library-service
+          npm run prisma:generate --workspace=finance-service
+          npm run prisma:generate --workspace=notification-service
+
       - name: Lint
         run: npm run lint
 
@@ -30,3 +71,6 @@ jobs:
 
       - name: Run Tests
         run: npm test
+
+      - name: Build frontend
+        run: npm run build --workspace=frontend
