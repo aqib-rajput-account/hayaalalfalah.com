@@ -1,0 +1,150 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_MULTIPLE_DATABASES: identity_db,mosque_db,prayer_db,community_db,governance_db,library_db,finance_db,notification_db
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-user}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mosque_network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mosque_network
+
+  identity-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}identity-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/identity_db?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-mc_access_token}
+      AUTH_COOKIE_MAX_AGE_MS: ${AUTH_COOKIE_MAX_AGE_MS:-86400000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  mosque-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}mosque-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4002
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/mosque_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  prayer-event-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}prayer-event-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4003
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/prayer_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  community-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}community-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4004
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/community_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  governance-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}governance-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4005
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/governance_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  library-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}library-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4006
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/library_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  finance-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}finance-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4007
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/finance_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+  notification-service:
+    image: ${IMAGE_PREFIX:-ghcr.io}/${IMAGE_NAMESPACE:-example}/${IMAGE_NAME_PREFIX:-mosqueconnect-}notification-service:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4008
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/notification_db?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mosque_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  mosque_network:
+    driver: bridge
