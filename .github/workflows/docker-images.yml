@@ -26,7 +26,7 @@ jobs:
             context: ./services/api-gateway
             dockerfile: ./services/api-gateway/Dockerfile
           - name: frontend
-            context: .
+            context: ./frontend
             dockerfile: ./frontend/Dockerfile
           - name: identity-service
             context: .
